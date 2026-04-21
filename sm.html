@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Traffic Optimizer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: Arial; }
+        input, button { margin: 5px; }
+        svg { border: 1px solid black; }
+    </style>
+</head>
+<body>
+
+<h2>🚦 Smart Traffic Route Optimizer</h2>
+
+<!-- Add Node -->
+<h3>Add Node</h3>
+<input id="nodeName" placeholder="Node Name">
+<input id="x" placeholder="X">
+<input id="y" placeholder="Y">
+<button onclick="addNode()">Add Node</button>
+
+<!-- Add Edge -->
+<h3>Add Road</h3>
+<input id="from" placeholder="From">
+<input id="to" placeholder="To">
+<input id="distance" placeholder="Distance">
+<input id="traffic" placeholder="Traffic Multiplier">
+<button onclick="addEdge()">Add Road</button>
+
+<!-- Update Traffic -->
+<h3>Update Traffic</h3>
+<input id="u" placeholder="From">
+<input id="v" placeholder="To">
+<input id="newTraffic" placeholder="New Traffic">
+<button onclick="updateTraffic()">Update</button>
+
+<!-- Find Path -->
+<h3>Find Shortest Path</h3>
+<input id="start" placeholder="Start">
+<input id="end" placeholder="End">
+<button onclick="findPath()">Find Path</button>
+
+<h3 id="output"></h3>
+
+<svg width="800" height="500"></svg>
+
+<script>
+// ----------------------
+// Graph Structure
+// ----------------------
+let nodes = [];
+let edges = [];
+
+// ----------------------
+// Add Node
+// ----------------------
+function addNode() {
+    let name = document.getElementById("nodeName").value;
+    let x = +document.getElementById("x").value;
+    let y = +document.getElementById("y").value;
+
+    nodes.push({ id: name, x: x, y: y });
+    draw();
+}
+
+// ----------------------
+// Add Edge
+// ----------------------
+function addEdge() {
+    let from = document.getElementById("from").value;
+    let to = document.getElementById("to").value;
+    let dist = +document.getElementById("distance").value;
+    let traffic = +document.getElementById("traffic").value;
+
+    edges.push({
+        source: from,
+        target: to,
+        distance: dist,
+        traffic: traffic,
+        weight: dist * traffic
+    });
+
+    draw();
+}
+
+// ----------------------
+// Update Traffic
+// ----------------------
+function updateTraffic() {
+    let u = document.getElementById("u").value;
+    let v = document.getElementById("v").value;
+    let t = +document.getElementById("newTraffic").value;
+
+    edges.forEach(edge => {
+        if ((edge.source === u && edge.target === v) ||
+            (edge.source === v && edge.target === u)) {
+            edge.traffic = t;
+            edge.weight = edge.distance * t;
+        }
+    });
+
+    draw();
+}
+
+// ----------------------
+// Heuristic (Euclidean)
+// ----------------------
+function heuristic(a, b) {
+    let n1 = nodes.find(n => n.id === a);
+    let n2 = nodes.find(n => n.id === b);
+    return Math.sqrt((n1.x - n2.x)**2 + (n1.y - n2.y)**2);
+}
+
+// ----------------------
+// A* Algorithm
+// ----------------------
+function aStar(start, goal) {
+    let open = [start];
+    let cameFrom = {};
+    let g = {};
+    let f = {};
+
+    nodes.forEach(n => {
+        g[n.id] = Infinity;
+        f[n.id] = Infinity;
+    });
+
+    g[start] = 0;
+    f[start] = heuristic(start, goal);
+
+    while (open.length > 0) {
+        open.sort((a, b) => f[a] - f[b]);
+        let current = open.shift();
+
+        if (current === goal) {
+            let path = [];
+            while (current) {
+                path.unshift(current);
+                current = cameFrom[current];
+            }
+            return path;
+        }
+
+        edges.forEach(edge => {
+            let neighbor = null;
+
+            if (edge.source === current) neighbor = edge.target;
+            else if (edge.target === current) neighbor = edge.source;
+
+            if (neighbor) {
+                let tempG = g[current] + edge.weight;
+
+                if (tempG < g[neighbor]) {
+                    cameFrom[neighbor] = current;
+                    g[neighbor] = tempG;
+                    f[neighbor] = g[neighbor] + heuristic(neighbor, goal);
+
+                    if (!open.includes(neighbor)) {
+                        open.push(neighbor);
+                    }
+                }
+            }
+        });
+    }
+
+    return null;
+}
+
+// ----------------------
+// Find Path
+// ----------------------
+function findPath() {
+    let start = document.getElementById("start").value;
+    let end = document.getElementById("end").value;
+
+    let path = aStar(start, end);
+
+    if (path) {
+        document.getElementById("output").innerText =
+            "Shortest Path: " + path.join(" → ");
+        draw(path);
+    } else {
+        document.getElementById("output").innerText = "No path found";
+    }
+}
+
+// ----------------------
+// Draw Graph (D3)
+// ----------------------
+function draw(path = []) {
+    let svg = d3.select("svg");
+    svg.selectAll("*").remove();
+
+    // Helper: check if edge is in path
+    function isPathEdge(u, v) {
+        for (let i = 0; i < path.length - 1; i++) {
+            if (
+                (path[i] === u && path[i + 1] === v) ||
+                (path[i] === v && path[i + 1] === u)
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Draw edges
+    edges.forEach(edge => {
+        let n1 = nodes.find(n => n.id === edge.source);
+        let n2 = nodes.find(n => n.id === edge.target);
+
+        let highlight = isPathEdge(edge.source, edge.target);
+
+        // Draw line
+        svg.append("line")
+            .attr("x1", n1.x * 50)
+            .attr("y1", n1.y * 50)
+            .attr("x2", n2.x * 50)
+            .attr("y2", n2.y * 50)
+            .attr("stroke", highlight ? "red" : "black")
+            .attr("stroke-width", highlight ? 4 : 2);
+
+        // Show distance (weight)
+        let midX = (n1.x + n2.x) / 2 * 50;
+        let midY = (n1.y + n2.y) / 2 * 50;
+
+        svg.append("text")
+            .attr("x", midX)
+            .attr("y", midY)
+            .attr("fill", "blue")
+            .attr("font-size", "12px")
+            .text(edge.weight.toFixed(1)); // shows weighted distance
+    });
+
+    // Draw nodes
+    nodes.forEach(node => {
+        svg.append("circle")
+            .attr("cx", node.x * 50)
+            .attr("cy", node.y * 50)
+            .attr("r", 15)
+            .attr("fill", "lightblue");
+
+        svg.append("text")
+            .attr("x", node.x * 50 - 5)
+            .attr("y", node.y * 50 + 5)
+            .text(node.id);
+    });
+}
+</script>
+
+</body>
+</html>
